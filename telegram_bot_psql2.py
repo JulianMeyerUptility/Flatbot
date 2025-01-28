@@ -3,25 +3,36 @@ import psycopg2
 import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext
+import os
+import requests
 
-TOKEN = "6154170131:AAFBbZIB538phNYtWf3mb-cIy54XzcQXqW8"
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-link = "http://18.193.123.146:8501"
+# Use environment variables for the database connection
+db_user = os.getenv('DB_USER')
+db_password = os.getenv('DB_PASSWORD')
+db_host = os.getenv('DB_HOST')
+db_name = os.getenv('DB_NAME')
+
+# Function to get the public IP address
+def get_public_ip():
+    response = requests.get('https://api.ipify.org?format=json')
+    return response.json()['ip']
+
+link = f"http://{get_public_ip()}:8501"
 
 send_results_running = False
-
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 async def start(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
 
     # Connect to the PostgreSQL database
-    connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="flatbot-database.cel1s9qmhs81.eu-central-1.rds.amazonaws.com", port="5432")
+    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
     cursor = connection.cursor()
 
     # Check if the user ID exists in the 'users' table
@@ -58,11 +69,11 @@ async def start(update: Update, context: CallbackContext):
     cursor.close()
     connection.close()
 
-
 async def check_results(user_id, context):
+    global send_results_running
     while send_results_running:
         # Connect to the PostgreSQL database
-        connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="flatbot-database.cel1s9qmhs81.eu-central-1.rds.amazonaws.com", port="5432")
+        connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
         cursor = connection.cursor()
 
         # Retrieve user preferences from the "users" table
@@ -102,7 +113,6 @@ async def check_results(user_id, context):
         connection.close()
         await asyncio.sleep(5)  # Wait for 30 seconds before checking again
 
-
 async def send_results(update: Update, context: CallbackContext):
     global send_results_running
     
@@ -131,12 +141,11 @@ async def stop(update: Update, context: CallbackContext):
     else:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="send_results is not running.")
 
-
 async def delete_account(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     
     # Connect to the PostgreSQL database
-    connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="flatbot-database.cel1s9qmhs81.eu-central-1.rds.amazonaws.com", port="5432")
+    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
     cursor = connection.cursor()
     
     # Delete the user account from the 'users' table
@@ -149,7 +158,6 @@ async def delete_account(update: Update, context: CallbackContext):
     connection.close()
     
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Your account has been deleted.")
-
 
 if __name__ == '__main__':
     application = ApplicationBuilder().token(TOKEN).build()

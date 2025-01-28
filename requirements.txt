@@ -1,13 +1,11 @@
 pandas
 plotly
-plotly.express
 scrapy
 geopy
 streamlit
 numpy
 folium
 streamlit_folium
-os
-csv
-datetime
-watchdog
+requests
+psycopg2
+python-telegram-bot

@@ -5,9 +5,15 @@ import folium
 from streamlit_folium import folium_static
 import psycopg2
 from datetime import datetime
+import os
 
 def load_data():
-    connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="flatbot-database.cel1s9qmhs81.eu-central-1.rds.amazonaws.com", port="5432")
+    db_user = os.getenv('DB_USER')
+    db_password = os.getenv('DB_PASSWORD')
+    db_host = os.getenv('DB_HOST')
+    db_name = os.getenv('DB_NAME')
+    
+    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
     cursor = connection.cursor()
     cursor.execute("SELECT * FROM results")
     df = pd.DataFrame(cursor.fetchall(), columns=["ID", "address", "rooms", "size", "price", "link", "image_url", "latitude", "longitude", "postcode", "datetime", "neighborhood", "city", "district"])
@@ -25,7 +31,12 @@ def filter_data(df, max_price, min_size, min_rooms, selected_cities, selected_ne
     return filtered_df
 
 def store_user_settings(user_id, user_settings):
-    connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="flatbot-database.cel1s9qmhs81.eu-central-1.rds.amazonaws.com", port="5432")
+    db_user = os.getenv('DB_USER')
+    db_password = os.getenv('DB_PASSWORD')
+    db_host = os.getenv('DB_HOST')
+    db_name = os.getenv('DB_NAME')
+    
+    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
     cursor = connection.cursor()
     cursor.execute("UPDATE users SET max_price = %s, min_size = %s, min_rooms = %s, selected_cities = %s, selected_neighborhoods = %s WHERE user_id = %s",
                    (user_settings["max_price"], user_settings["min_size"], user_settings["min_rooms"], user_settings["selected_cities"], user_settings["selected_neighborhoods"], user_id))
@@ -48,7 +59,12 @@ map_df = filtered_df[["ID", "address", "rooms", "size", "price", "link", "image_
 
 # Function to check if the user ID exists
 def check_user_id(user_id):
-    connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="flatbot-database.cel1s9qmhs81.eu-central-1.rds.amazonaws.com", port="5432")
+    db_user = os.getenv('DB_USER')
+    db_password = os.getenv('DB_PASSWORD')
+    db_host = os.getenv('DB_HOST')
+    db_name = os.getenv('DB_NAME')
+    
+    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
     cursor = connection.cursor()
     cursor.execute("SELECT COUNT(*) FROM users WHERE user_id = %s", (user_id,))
     count = cursor.fetchone()[0]
@@ -59,13 +75,15 @@ st.header("to open menu click [ > ] on top left")
 if user_id:
     if check_user_id(int(user_id)):
 
-
-
-        connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="flatbot-database.cel1s9qmhs81.eu-central-1.rds.amazonaws.com", port="5432")
+        db_user = os.getenv('DB_USER')
+        db_password = os.getenv('DB_PASSWORD')
+        db_host = os.getenv('DB_HOST')
+        db_name = os.getenv('DB_NAME')
+        
+        connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
         cursor = connection.cursor()
         cursor.execute("SELECT max_price, min_size, min_rooms, max_age, selected_cities, selected_neighborhoods FROM users WHERE user_id = %s", (user_id,))
         user_settings = cursor.fetchone()
-
 
         if user_settings is not None:
             user_settings = {
@@ -96,7 +114,6 @@ if user_id:
             selected_cities = cities
         # print(selected_cities)
         selected_cities = st.sidebar.multiselect('Select Cities', cities, default=cities)
-
 
         selected_neighborhoods = user_settings["selected_neighborhoods"]
         neighborhoods = [
