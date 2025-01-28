@@ -1,0 +1,20 @@
+### MY TG ID
+249458611
+
+### SSH CONNECT TO SERVER
+ssh -i ~/.ssh/flatbot_frankfurt.pem  ubuntu@ec2-18-193-123-146.eu-central-1.compute.amazonaws.com
+
+### RUN STREAMLIT
+nohup sudo streamlit run streamlit_app.py > streamlit_log 2>&1 &
+
+### RUN TELEGRAM BOT
+nohup python3 telegram_bot_psql.py > /dev/null 2> tg_log &
+
+### PUSH FROM LOCAL TO SERVER (-r for folder)
+scp -i ~/.ssh/flatbot_frankfurt.pem /home/julian/Desktop/SPICED/flatbot/on_server/*  ubuntu@ec2-18-193-123-146.eu-central-1.compute.amazonaws.com:~
+
+### PULL FROM SERVER TO LOCAL
+scp -i ~/.ssh/flatbot_frankfurt.pem ubuntu@ec2-18-193-123-146.eu-central-1.compute.amazonaws.com:/home/ubuntu/* /home/julian/Desktop/SPICED/flatbot/on_server/
+
+### LIST PROCESSES
+ps -ef
