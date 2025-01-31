@@ -10,6 +10,17 @@ import psycopg2
 import os
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 
+# Use environment variables for database connection
+db_user = os.getenv('DB_USER', 'flatbot_db')
+db_password = os.getenv('DB_PASSWORD', 'DDQ9Gv7IABBqu1WrTMZt')
+db_host = os.getenv('DB_HOST', 'flatbot-db-server.postgres.database.azure.com')
+db_name = os.getenv('DB_NAME', 'flatbotdb')
+
+# Format the username correctly
+formatted_user = f'{db_user}@{db_host.split(".")[0]}'
+
+
+
 class FlatSpiderPsql(Spider):
     name = "flat_spider_pqsl"
     allowed_domains = ["inberlinwohnen.de"]
@@ -26,10 +37,10 @@ class FlatSpiderPsql(Spider):
         
         db_user = os.getenv('DB_USER')
         db_password = os.getenv('DB_PASSWORD')
-        db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
+        db_host = os.getenv('DB_HOST')
         db_name = os.getenv('DB_NAME')
         
-        connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
+        connection = psycopg2.connect(database=db_name, user=formatted_user, password=db_password, host=db_host, port="5432")
         cursor = connection.cursor()
         cursor.execute("SELECT link FROM results")
         existing_links = set(link[0] for link in cursor.fetchall())
@@ -47,10 +58,10 @@ class FlatSpiderPsql(Spider):
 
         db_user = os.getenv('DB_USER')
         db_password = os.getenv('DB_PASSWORD')
-        db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
+        db_host = os.getenv('DB_HOST')
         db_name = os.getenv('DB_NAME')
         
-        connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
+        connection = psycopg2.connect(database=db_name, user=formatted_user, password=db_password, host=db_host, port="5432")
         cursor = connection.cursor()
 
         cursor.execute("SELECT MAX(id) FROM results")
@@ -62,17 +73,19 @@ class FlatSpiderPsql(Spider):
         existing_links.update(link[0] for link in cursor.fetchall())
 
         # Initialize the geolocator
-        geolocator = Nominatim(user_agent="my_app")
+        geolocator = Nominatim(user_agent="my_app", timeout=10)
 
         def get_area_code(latitude, longitude):
-            geolocator = Nominatim(user_agent="flatbot")  
-            location = geolocator.reverse((latitude, longitude), exactly_one=True)
-            if location:
-                address = location.raw['address']
-                area_code = address.get('postcode', '')
-                neighbourhood = address.get('suburb', '')
-                city = address.get('city', '')
-                return area_code, neighbourhood, city
+            try:
+                location = geolocator.reverse((latitude, longitude), exactly_one=True)
+                if location:
+                    address = location.raw['address']
+                    area_code = address.get('postcode', '')
+                    neighbourhood = address.get('suburb', '')
+                    city = address.get('city', '')
+                    return area_code, neighbourhood, city
+            except (GeocoderTimedOut, GeocoderUnavailable):
+                return '', '', ''
             return '', '', ''
         
         for flat in response.css('li[id^="flat_"]'):
@@ -96,13 +109,16 @@ class FlatSpiderPsql(Spider):
 
             # Geocode the address to fetch latitude and longitude
             address = flat.css('a.map-but::text').get()
-            location = geolocator.geocode(address)
-            latitude = location.latitude if location else None
-            longitude = location.longitude if location else None
-            area_code, neighbourhood, city = get_area_code(latitude, longitude)
+            try:
+                location = geolocator.geocode(address)
+                latitude = location.latitude if location else None
+                longitude = location.longitude if location else None
+                area_code, neighbourhood, city = get_area_code(latitude, longitude)
+            except (GeocoderTimedOut, GeocoderUnavailable):
+                latitude, longitude, area_code, neighbourhood, city = None, None, '', '', ''
 
-            rows.append({
-                'ID': str(id_counter),
+            row = {
+                'id': str(id_counter),
                 'address': address,
                 'rooms': rooms,
                 'size': size,
@@ -111,21 +127,22 @@ class FlatSpiderPsql(Spider):
                 'image_url': flat.css('figure.flat-image::attr(style)').get().split('(')[1][:-3],
                 'latitude': latitude,
                 'longitude': longitude,
-                'postcode': int(area_code) if area_code else None,
+                'postcode': area_code,
                 'datetime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'neighbourhood': neighbourhood,
                 'city': city
-            })
+            }
 
+            rows.append(row)
             id_counter += 1
-
+      
         # Insert new results into the results table
         for row in rows:
             cursor.execute(
-                "INSERT INTO results (ID, address, rooms, size, price, link, image_url, latitude, longitude, postcode, datetime, neighbourhood, city) "
+                "INSERT INTO results (id, address, rooms, size, price, link, image_url, latitude, longitude, postcode, datetime, neighbourhood, city) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    row['ID'],
+                    row['id'],
                     row['address'],
                     row['rooms'],
                     row['size'],

@@ -1,10 +1,10 @@
 import asyncio
-import psycopg2
 import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext
 import os
 import requests
+from sqlalchemy import create_engine, text
 
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
@@ -13,11 +13,17 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Use environment variables for the database connection
-db_user = os.getenv('DB_USER')
-db_password = os.getenv('DB_PASSWORD')
-db_host = os.getenv('DB_HOST')
-db_name = os.getenv('DB_NAME')
+# Use environment variables for database connection
+db_user = os.getenv('DB_USER', 'flatbot_db')
+db_password = os.getenv('DB_PASSWORD', 'DDQ9Gv7IABBqu1WrTMZt')
+db_host = os.getenv('DB_HOST', 'flatbot-db-server.postgres.database.azure.com')
+db_name = os.getenv('DB_NAME', 'flatbotdb')
+
+# Format the username correctly
+formatted_user = f'{db_user}@{db_host.split(".")[0]}'
+
+# Create the SQLAlchemy engine
+engine = create_engine(f'postgresql+psycopg2://{formatted_user}:{db_password}@{db_host}/{db_name}')
 
 # Function to get the public IP address
 def get_public_ip():
@@ -32,26 +38,15 @@ async def start(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
 
     # Connect to the PostgreSQL database
-    db_user = os.getenv('DB_USER')
-    db_password = os.getenv('DB_PASSWORD')
-    db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
-    db_name = os.getenv('DB_NAME')
-    
-    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
-    cursor = connection.cursor()
-
-    # Check if the user ID exists in the 'users' table
-    cursor.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
-    result = cursor.fetchone()
+    connection = engine.connect()
+    result = connection.execute(text("SELECT * FROM users WHERE user_id = :user_id"), {'user_id': user_id}).fetchone()
 
     if not result:
         # Insert the user ID into the 'users' table and update max_price, min_size, and min_rooms
-        cursor.execute(
-            "INSERT INTO users (user_id, max_price, min_size, min_rooms) "
-            "VALUES (%s, %s, %s, %s)",
-            (user_id, 800, 1, 1)
+        connection.execute(
+            text("INSERT INTO users (user_id, max_price, min_size, min_rooms) VALUES (:user_id, :max_price, :min_size, :min_rooms)"),
+            {'user_id': user_id, 'max_price': 800, 'min_size': 1, 'min_rooms': 1}
         )
-        connection.commit()
 
         # Create an InlineKeyboardButton with the user ID as text
         copy_button = InlineKeyboardButton(text=str(user_id), callback_data=str(user_id))
@@ -72,26 +67,17 @@ async def start(update: Update, context: CallbackContext):
         )
 
     # Close the database connection
-    cursor.close()
     connection.close()
-
-logging.basicConfig(level=logging.DEBUG)
 
 async def check_results(user_id, context):
     global send_results_running
     while send_results_running:
         # Connect to the PostgreSQL database
-        db_user = os.getenv('DB_USER')
-        db_password = os.getenv('DB_PASSWORD')
-        db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
-        db_name = os.getenv('DB_NAME')
-        
-        connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
-        cursor = connection.cursor()
-
-        # Retrieve user preferences from the "users" table
-        cursor.execute("SELECT max_price, min_size, min_rooms, selected_cities, selected_neighbourhoods FROM users WHERE user_id = %s", (user_id,))
-        user_preferences = cursor.fetchone()
+        connection = engine.connect()
+        user_preferences = connection.execute(
+            text("SELECT max_price, min_size, min_rooms, selected_cities, selected_neighbourhoods FROM users WHERE user_id = :user_id"),
+            {'user_id': user_id}
+        ).fetchone()
 
         if user_preferences is None:
             logging.debug(f"No user preferences found for user ID {user_id}")
@@ -104,20 +90,20 @@ async def check_results(user_id, context):
         selected_cities = user_preferences[3]
         selected_neighbourhoods = user_preferences[4]
 
-        logging.debug(f"User preferences for user ID {user_id}: max_price={max_price}, min_size={min_size}, min_rooms={min_rooms}, selected_cities={selected_cities}, selected_neighbourhoods={selected_neighbourhoods}")
-
         # Retrieve unsent results from the "results" table based on user preferences
-        cursor.execute("""
-            SELECT id, address, rooms, size, price, link 
-            FROM results 
-            WHERE price <= %s 
-              AND size >= %s 
-              AND rooms >= %s 
-              AND city = ANY(%s) 
-              AND neighbourhood = ANY(%s) 
-              AND id NOT IN (SELECT result_id FROM sent_results WHERE user_id = %s)
-        """, (max_price, min_size, min_rooms, selected_cities, selected_neighbourhoods, user_id))
-        results = cursor.fetchall()
+        results = connection.execute(
+            text("""
+                SELECT id, address, rooms, size, price, link 
+                FROM results 
+                WHERE price <= :max_price 
+                  AND size >= :min_size 
+                  AND rooms >= :min_rooms 
+                  AND city = ANY(:selected_cities) 
+                  AND neighbourhood = ANY(:selected_neighbourhoods) 
+                  AND id NOT IN (SELECT result_id FROM sent_results WHERE user_id = :user_id)
+            """),
+            {'max_price': max_price, 'min_size': min_size, 'min_rooms': min_rooms, 'selected_cities': selected_cities, 'selected_neighbourhoods': selected_neighbourhoods, 'user_id': user_id}
+        ).fetchall()
 
         logging.debug(f"Number of results found: {len(results)}")
 
@@ -139,10 +125,16 @@ async def check_results(user_id, context):
             await context.bot.send_message(chat_id=user_id, text=message_text)
 
             # Insert the sent result into the "sent_results" table
-            cursor.execute("INSERT INTO sent_results (user_id, result_id, sent) VALUES (%s, %s, now())", (user_id, result_id))
-            connection.commit()
+            try:
+                logging.debug(f"Inserting result_id {result_id} for user_id {user_id} into sent_results")
+                connection.execute(
+                    text("INSERT INTO sent_results (user_id, result_id, sent) VALUES (:user_id, :result_id, now())"),
+                    {'user_id': user_id, 'result_id': result_id}
+                )
+                connection.commit()  # Ensure the transaction is committed
+            except Exception as e:
+                logging.error(f"Error inserting result_id {result_id} for user_id {user_id} into sent_results: {e}")
 
-        cursor.close()
         connection.close()
         await asyncio.sleep(5)  # Wait for 30 seconds before checking again
 
@@ -176,20 +168,14 @@ async def stop(update: Update, context: CallbackContext):
 
 async def delete_account(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
-    
+
     # Connect to the PostgreSQL database
-    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
-    cursor = connection.cursor()
-    
+    connection = engine.connect()
+
     # Delete the user account from the 'users' table
-    cursor.execute("DELETE FROM users WHERE user_id = %s", (user_id,))
-    cursor.execute("DELETE FROM sent_results WHERE user_id = %s", (user_id,))
-    connection.commit()
-    
-    # Close the database connection
-    cursor.close()
+    connection.execute(text("DELETE FROM users WHERE user_id = :user_id"), {'user_id': user_id})
     connection.close()
-    
+
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Your account has been deleted.")
 
 if __name__ == '__main__':

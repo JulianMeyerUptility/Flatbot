@@ -35,7 +35,7 @@ users = Table('users', metadata,
               Column('min_rooms', Numeric(10, 2)),
               Column('max_age', Integer),  # Add max_age column
               Column('selected_cities', ARRAY(String)),  # Add selected_cities column
-              Column('selected_neighborhoods', ARRAY(String)))  # Add selected_neighborhoods column
+              Column('selected_neighbourhoods', ARRAY(String)))  # Add selected_neighbourhoods column
 
 # Use environment variables for database connection
 db_user = os.getenv('DB_USER', 'flatbot_db')
@@ -43,13 +43,17 @@ db_password = os.getenv('DB_PASSWORD', 'DDQ9Gv7IABBqu1WrTMZt')
 db_host = os.getenv('DB_HOST', 'localhost')
 db_name = os.getenv('DB_NAME', 'flatbotdb')
 
+# Format the username correctly
+formatted_user = f'{db_user}@{db_host.split(".")[0]}'
+
 # Create the PostgreSQL user if it doesn't exist
 def create_user():
     conn = psycopg2.connect(
         dbname='postgres',
-        user='postgres',  # Connect as the postgres superuser
-        password='postgres',  # Replace with the postgres superuser password
-        host=db_host
+        user=formatted_user,  # Use the correct username format
+        password=db_password,
+        host=db_host,
+        sslmode='require'
     )
     conn.autocommit = True
     cursor = conn.cursor()
@@ -67,9 +71,10 @@ create_user()
 def create_database():
     conn = psycopg2.connect(
         dbname='postgres',
-        user=db_user,
+        user=formatted_user,  # Use the correct username format
         password=db_password,
-        host=db_host
+        host=db_host,
+        sslmode='require'
     )
     conn.autocommit = True
     cursor = conn.cursor()
@@ -83,7 +88,7 @@ def create_database():
 create_database()
 
 # Create the database engine
-engine = create_engine(f'postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}')
+engine = create_engine(f'postgresql://{formatted_user}:{db_password}@{db_host}:5432/{db_name}?sslmode=require')
 metadata.create_all(engine)
 
 print("Tables created successfully.")

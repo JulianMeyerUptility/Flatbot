@@ -10,39 +10,50 @@ import logging
 
 logging.basicConfig(level=logging.DEBUG)
 
+# Use environment variables for database connection
+db_user = os.getenv('DB_USER', 'flatbot_db')
+db_password = os.getenv('DB_PASSWORD', 'DDQ9Gv7IABBqu1WrTMZt')
+db_host = os.getenv('DB_HOST', 'flatbot-db-server.postgres.database.azure.com')
+db_name = os.getenv('DB_NAME', 'flatbotdb')
+
+# Format the username correctly
+formatted_user = f'{db_user}@{db_host.split(".")[0]}'
+
+
 def load_data():
-    db_user = os.getenv('DB_USER')
-    db_password = os.getenv('DB_PASSWORD')
-    db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
-    db_name = os.getenv('DB_NAME')
-    
-    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
-    cursor = connection.cursor()
-    cursor.execute("SELECT * FROM results")
-    df = pd.DataFrame(cursor.fetchall(), columns=["id", "address", "rooms", "size", "price", "link", "image_url", "latitude", "longitude", "postcode", "datetime", "neighbourhood", "city"])
+    connection = psycopg2.connect(
+        database=db_name,
+        user=formatted_user,  # Use the correct username format
+        password=db_password,
+        host=db_host,
+        port="5432",
+        sslmode='require'
+    )
+    query = "SELECT * FROM results"  # Replace with your actual query
+    df = pd.read_sql_query(query, connection)
     connection.close()
     return df
 
-def filter_data(df, max_price, min_size, min_rooms, selected_cities, selected_neighborhoods):
+def filter_data(df, max_price, min_size, min_rooms, selected_cities, selected_neighbourhoods):
     filtered_df = df[
         (df["price"] <= max_price) &
         (df["size"] >= min_size) &
         (df["rooms"] >= min_rooms) &
         df["city"].isin(selected_cities) &
-        df["neighbourhood"].isin(selected_neighborhoods)
+        df["neighbourhood"].isin(selected_neighbourhoods)
     ]
     return filtered_df
 
 def store_user_settings(user_id, user_settings):
     db_user = os.getenv('DB_USER')
     db_password = os.getenv('DB_PASSWORD')
-    db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
+    db_host = os.getenv('DB_HOST')
     db_name = os.getenv('DB_NAME')
     
-    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
+    connection = psycopg2.connect(database=db_name, user=formatted_user, password=db_password, host=db_host, port="5432")
     cursor = connection.cursor()
     cursor.execute(
-        "UPDATE users SET max_price = %s, min_size = %s, min_rooms = %s, selected_cities = %s, selected_neighborhoods = %s WHERE user_id = %s",
+        "UPDATE users SET max_price = %s, min_size = %s, min_rooms = %s, selected_cities = %s, selected_neighbourhoods = %s WHERE user_id = %s",
         (user_settings["max_price"], user_settings["min_size"], user_settings["min_rooms"], user_settings["selected_cities"], user_settings["selected_neighbourhoods"], user_id)
     )
     connection.commit()
@@ -59,17 +70,20 @@ filtered_df = df
 
 # Function to check if the user ID exists
 def check_user_id(user_id):
-    db_user = os.getenv('DB_USER')
-    db_password = os.getenv('DB_PASSWORD')
-    db_host = os.getenv('DB_HOST')
-    db_name = os.getenv('DB_NAME')
-    
-    connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
+    connection = psycopg2.connect(
+        database=db_name,
+        user=formatted_user,  # Use the correct username format
+        password=db_password,
+        host=db_host,
+        port="5432",
+        sslmode='require'
+    )
     cursor = connection.cursor()
     cursor.execute("SELECT COUNT(*) FROM users WHERE user_id = %s", (user_id,))
-    count = cursor.fetchone()[0]
+    result = cursor.fetchone()
+    cursor.close()
     connection.close()
-    return count > 0
+    return result[0] > 0
 
 st.header("to open menu click [ > ] on top left")
 if user_id:
@@ -81,9 +95,9 @@ if user_id:
         db_host = os.getenv('DB_HOST')
         db_name = os.getenv('DB_NAME')
         
-        connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
+        connection = psycopg2.connect(database=db_name, user=formatted_user, password=db_password, host=db_host, port="5432")
         cursor = connection.cursor()
-        cursor.execute("SELECT max_price, min_size, min_rooms, selected_cities, selected_neighborhoods FROM users WHERE user_id = %s", (user_id,))
+        cursor.execute("SELECT max_price, min_size, min_rooms, selected_cities, selected_neighbourhoods FROM users WHERE user_id = %s", (user_id,))
         user_settings = cursor.fetchone()
 
         if user_settings is not None:
@@ -113,7 +127,7 @@ if user_id:
             selected_cities = cities
         selected_cities = st.sidebar.multiselect('Select Cities', cities, default=cities)
 
-        selected_neighborhoods = user_settings["selected_neighbourhoods"]
+        selected_neighbourhoods = user_settings["selected_neighbourhoods"]
         neighborhoods = [
             'Mitte', 'Moabit', 'Hansaviertel', 'Tiergarten', 'Wedding', 'Gesundbrunnen',
             'Friedrichshain', 'Kreuzberg', 'Prenzlauer Berg', 'Weißensee', 'Blankenburg',
@@ -134,13 +148,13 @@ if user_id:
             'Hermsdorf', 'Waidmannslust', 'Lübars', 'Wittenau', 'Märkisches Viertel', 'Borsigwalde'
         ]
 
-        if not selected_neighborhoods:
-            selected_neighborhoods = neighborhoods
+        if not selected_neighbourhoods:
+            selected_neighbourhoods = neighborhoods
 
-        selected_neighborhoods = st.sidebar.multiselect('Select Neighborhoods', neighborhoods, default=neighborhoods)
+        selected_neighbourhoods = st.sidebar.multiselect('Select Neighborhoods', neighborhoods, default=neighborhoods)
 
         # Filter the dataframe based on the selected cities and neighborhoods
-        df = df[df['city'].isin(selected_cities) & df['neighbourhood'].isin(selected_neighborhoods)]
+        df = df[df['city'].isin(selected_cities) & df['neighbourhood'].isin(selected_neighbourhoods)]
 
         max_price = user_settings["max_price"]
         if pd.isnull(max_price):
@@ -162,7 +176,7 @@ if user_id:
             min_size = st.sidebar.slider("Min size [ m² ]", min_value=int(df["size"].min()), max_value=int(df["size"].max()), value=int(min_size))
             min_rooms = st.sidebar.slider("Min rooms [ # ]", min_value=int(df["rooms"].min()), max_value=int(df["rooms"].max()), value=int(min_rooms))
 
-        filtered_df = filter_data(df, max_price, min_size, min_rooms, selected_cities, selected_neighborhoods)
+        filtered_df = filter_data(df, max_price, min_size, min_rooms, selected_cities, selected_neighbourhoods)
         map_df = filtered_df[["id", "address", "rooms", "size", "price", "link", "image_url", "latitude", "longitude", "postcode", "datetime", "neighbourhood", "city"]].dropna()
 
         user_settings = {
@@ -170,7 +184,7 @@ if user_id:
             "min_size": min_size,
             "min_rooms": min_rooms,
             "selected_cities": selected_cities,
-            "selected_neighbourhoods": selected_neighborhoods,
+            "selected_neighbourhoods": selected_neighbourhoods,
         }
         st.sidebar.write(f"{len(filtered_df)} results have been found.")    
         store_user_settings(user_id, user_settings)
