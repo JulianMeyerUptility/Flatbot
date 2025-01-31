@@ -32,6 +32,11 @@ async def start(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
 
     # Connect to the PostgreSQL database
+    db_user = os.getenv('DB_USER')
+    db_password = os.getenv('DB_PASSWORD')
+    db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
+    db_name = os.getenv('DB_NAME')
+    
     connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
     cursor = connection.cursor()
 
@@ -76,11 +81,16 @@ async def check_results(user_id, context):
     global send_results_running
     while send_results_running:
         # Connect to the PostgreSQL database
+        db_user = os.getenv('DB_USER')
+        db_password = os.getenv('DB_PASSWORD')
+        db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
+        db_name = os.getenv('DB_NAME')
+        
         connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
         cursor = connection.cursor()
 
         # Retrieve user preferences from the "users" table
-        cursor.execute("SELECT max_price, min_size, min_rooms, selected_cities, selected_neighborhoods FROM users WHERE user_id = %s", (user_id,))
+        cursor.execute("SELECT max_price, min_size, min_rooms, selected_cities, selected_neighbourhoods FROM users WHERE user_id = %s", (user_id,))
         user_preferences = cursor.fetchone()
 
         if user_preferences is None:
@@ -92,9 +102,9 @@ async def check_results(user_id, context):
         min_size = user_preferences[1]
         min_rooms = user_preferences[2]
         selected_cities = user_preferences[3]
-        selected_neighborhoods = user_preferences[4]
+        selected_neighbourhoods = user_preferences[4]
 
-        logging.debug(f"User preferences for user ID {user_id}: max_price={max_price}, min_size={min_size}, min_rooms={min_rooms}, selected_cities={selected_cities}, selected_neighborhoods={selected_neighborhoods}")
+        logging.debug(f"User preferences for user ID {user_id}: max_price={max_price}, min_size={min_size}, min_rooms={min_rooms}, selected_cities={selected_cities}, selected_neighbourhoods={selected_neighbourhoods}")
 
         # Retrieve unsent results from the "results" table based on user preferences
         cursor.execute("""
@@ -106,7 +116,7 @@ async def check_results(user_id, context):
               AND city = ANY(%s) 
               AND neighbourhood = ANY(%s) 
               AND id NOT IN (SELECT result_id FROM sent_results WHERE user_id = %s)
-        """, (max_price, min_size, min_rooms, selected_cities, selected_neighborhoods, user_id))
+        """, (max_price, min_size, min_rooms, selected_cities, selected_neighbourhoods, user_id))
         results = cursor.fetchall()
 
         logging.debug(f"Number of results found: {len(results)}")

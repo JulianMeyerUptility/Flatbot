@@ -26,7 +26,7 @@ class FlatSpiderPsql(Spider):
         
         db_user = os.getenv('DB_USER')
         db_password = os.getenv('DB_PASSWORD')
-        db_host = os.getenv('DB_HOST')
+        db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
         db_name = os.getenv('DB_NAME')
         
         connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
@@ -47,7 +47,7 @@ class FlatSpiderPsql(Spider):
 
         db_user = os.getenv('DB_USER')
         db_password = os.getenv('DB_PASSWORD')
-        db_host = os.getenv('DB_HOST')
+        db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
         db_name = os.getenv('DB_NAME')
         
         connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
@@ -65,7 +65,7 @@ class FlatSpiderPsql(Spider):
         geolocator = Nominatim(user_agent="my_app")
 
         def get_area_code(latitude, longitude):
-            geolocator = Nominatim(user_agent="flatbot")  # Replace "your_app_name" with your user agent
+            geolocator = Nominatim(user_agent="flatbot")  
             location = geolocator.reverse((latitude, longitude), exactly_one=True)
             if location:
                 address = location.raw['address']

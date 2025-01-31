@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.DEBUG)
 def load_data():
     db_user = os.getenv('DB_USER')
     db_password = os.getenv('DB_PASSWORD')
-    db_host = os.getenv('DB_HOST')
+    db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
     db_name = os.getenv('DB_NAME')
     
     connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
@@ -36,7 +36,7 @@ def filter_data(df, max_price, min_size, min_rooms, selected_cities, selected_ne
 def store_user_settings(user_id, user_settings):
     db_user = os.getenv('DB_USER')
     db_password = os.getenv('DB_PASSWORD')
-    db_host = os.getenv('DB_HOST')
+    db_host = os.getenv('DB_HOST')  # Ensure this points to the Azure PostgreSQL server
     db_name = os.getenv('DB_NAME')
     
     connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
