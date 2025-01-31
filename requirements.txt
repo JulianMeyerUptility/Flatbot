@@ -7,5 +7,6 @@ numpy
 folium
 streamlit_folium
 requests
+sqlalchemy
 psycopg2
 python-telegram-bot

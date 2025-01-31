@@ -6,7 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext
 import os
 import requests
 
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -42,9 +42,10 @@ async def start(update: Update, context: CallbackContext):
     if not result:
         # Insert the user ID into the 'users' table and update max_price, min_size, and min_rooms
         cursor.execute(
-            "INSERT INTO users (user_id, max_price, min_size, min_rooms, max_age) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (user_id, 800, 1, 1, 1))
+            "INSERT INTO users (user_id, max_price, min_size, min_rooms) "
+            "VALUES (%s, %s, %s, %s)",
+            (user_id, 800, 1, 1)
+        )
         connection.commit()
 
         # Create an InlineKeyboardButton with the user ID as text
@@ -69,6 +70,8 @@ async def start(update: Update, context: CallbackContext):
     cursor.close()
     connection.close()
 
+logging.basicConfig(level=logging.DEBUG)
+
 async def check_results(user_id, context):
     global send_results_running
     while send_results_running:
@@ -77,16 +80,36 @@ async def check_results(user_id, context):
         cursor = connection.cursor()
 
         # Retrieve user preferences from the "users" table
-        cursor.execute("SELECT max_price, min_size, min_rooms FROM users WHERE user_id = %s", (user_id,))
+        cursor.execute("SELECT max_price, min_size, min_rooms, selected_cities, selected_neighborhoods FROM users WHERE user_id = %s", (user_id,))
         user_preferences = cursor.fetchone()
+
+        if user_preferences is None:
+            logging.debug(f"No user preferences found for user ID {user_id}")
+            await asyncio.sleep(5)  # Wait for 30 seconds before checking again
+            continue
 
         max_price = user_preferences[0]
         min_size = user_preferences[1]
         min_rooms = user_preferences[2]
+        selected_cities = user_preferences[3]
+        selected_neighborhoods = user_preferences[4]
+
+        logging.debug(f"User preferences for user ID {user_id}: max_price={max_price}, min_size={min_size}, min_rooms={min_rooms}, selected_cities={selected_cities}, selected_neighborhoods={selected_neighborhoods}")
 
         # Retrieve unsent results from the "results" table based on user preferences
-        cursor.execute("SELECT id, address, rooms, size, price, link FROM results WHERE price <= %s AND size >= %s AND rooms >= %s AND id NOT IN (SELECT result_id FROM sent_results WHERE user_id = %s)", (max_price, min_size, min_rooms, user_id))
+        cursor.execute("""
+            SELECT id, address, rooms, size, price, link 
+            FROM results 
+            WHERE price <= %s 
+              AND size >= %s 
+              AND rooms >= %s 
+              AND city = ANY(%s) 
+              AND neighbourhood = ANY(%s) 
+              AND id NOT IN (SELECT result_id FROM sent_results WHERE user_id = %s)
+        """, (max_price, min_size, min_rooms, selected_cities, selected_neighborhoods, user_id))
         results = cursor.fetchall()
+
+        logging.debug(f"Number of results found: {len(results)}")
 
         if len(results) == 0:
             await asyncio.sleep(5)  # Wait for 30 seconds before checking again

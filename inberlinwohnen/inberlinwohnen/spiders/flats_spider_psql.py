@@ -7,8 +7,8 @@ from scrapy.spiders import Spider
 from scrapy import Request
 from scrapy import Selector
 import psycopg2
-
-
+import os
+from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 
 class FlatSpiderPsql(Spider):
     name = "flat_spider_pqsl"
@@ -23,8 +23,13 @@ class FlatSpiderPsql(Spider):
     def start_requests(self):
         # Load existing links from the results table or create it if it doesn't exist
         existing_links = set()
-        connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="flatbot-database.cel1s9qmhs81.eu-central-1.rds.amazonaws.com", port="5432")
-
+        
+        db_user = os.getenv('DB_USER')
+        db_password = os.getenv('DB_PASSWORD')
+        db_host = os.getenv('DB_HOST')
+        db_name = os.getenv('DB_NAME')
+        
+        connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
         cursor = connection.cursor()
         cursor.execute("SELECT link FROM results")
         existing_links = set(link[0] for link in cursor.fetchall())
@@ -35,13 +40,17 @@ class FlatSpiderPsql(Spider):
         for url in self.start_urls:
             yield scrapy.Request(url, callback=self.parse, meta={'existing_links': existing_links})
 
-
     def parse(self, response):
         id_counter = 1
         existing_links = response.meta.get('existing_links', set())
         rows = []
 
-        connection = psycopg2.connect(database="postgres", user="postgres", password="postgres", host="flatbot-database.cel1s9qmhs81.eu-central-1.rds.amazonaws.com", port="5432")
+        db_user = os.getenv('DB_USER')
+        db_password = os.getenv('DB_PASSWORD')
+        db_host = os.getenv('DB_HOST')
+        db_name = os.getenv('DB_NAME')
+        
+        connection = psycopg2.connect(database=db_name, user=db_user, password=db_password, host=db_host, port="5432")
         cursor = connection.cursor()
 
         cursor.execute("SELECT MAX(id) FROM results")
@@ -56,7 +65,7 @@ class FlatSpiderPsql(Spider):
         geolocator = Nominatim(user_agent="my_app")
 
         def get_area_code(latitude, longitude):
-            geolocator = Nominatim(user_agent="your_app_name")  # Replace "your_app_name" with your user agent
+            geolocator = Nominatim(user_agent="flatbot")  # Replace "your_app_name" with your user agent
             location = geolocator.reverse((latitude, longitude), exactly_one=True)
             if location:
                 address = location.raw['address']
@@ -66,7 +75,6 @@ class FlatSpiderPsql(Spider):
                 return area_code, neighbourhood, city
             return '', '', ''
         
-
         for flat in response.css('li[id^="flat_"]'):
             link = flat.css('a::attr(href)').get()
             if link in existing_links:
@@ -110,8 +118,6 @@ class FlatSpiderPsql(Spider):
             })
 
             id_counter += 1
-            
-            
 
         # Insert new results into the results table
         for row in rows:
@@ -134,7 +140,6 @@ class FlatSpiderPsql(Spider):
                     row['city']
                 )
             )
-        
 
         # Commit the transaction and close the cursor and connection
         connection.commit()
